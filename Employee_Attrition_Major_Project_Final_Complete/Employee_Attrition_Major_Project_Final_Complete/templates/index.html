@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Attrition Predictor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="box">
+    <h1>Employee Attrition Prediction</h1>
+
+    <form action="/predict" method="post">
+      <label for="age">Age</label>
+      <input id="age" name="Age" type="number" min="18" max="80" required>
+
+      <label for="travel">Business Travel</label>
+      <select id="travel" name="BusinessTravel">
+        <option>Travel_Rarely</option>
+        <option>Travel_Frequently</option>
+        <option>Non-Travel</option>
+      </select>
+
+      <label for="dept">Department</label>
+      <select id="dept" name="Department">
+        <option>Research & Development</option>
+        <option>Human Resources</option>
+        <option>Sales</option>
+      </select>
+
+      <label for="income">Monthly Income</label>
+      <!-- keep the exact name you had earlier so autofill works -->
+      <input id="income" name="Monthly Income" type="number" min="1000" max="20000" required>
+
+      <label for="overtime">Over Time</label>
+      <select id="overtime" name="OverTime">
+        <option>Yes</option>
+        <option>No</option>
+      </select>
+
+      <!-- Job Role -->
+<div class="form-group">
+  <label for="job_role">Job Role</label>
+  <select id="job_role" name="job_role" class="form-control">
+    <option value="Sales Executive">Sales Executive</option>
+    <option value="Research Scientist">Research Scientist</option>
+    <option value="Laboratory Technician">Laboratory Technician</option>
+    <option value="Manufacturing Director">Manufacturing Director</option>
+    <option value="Healthcare Representative">Healthcare Representative</option>
+    <option value="Manager">Manager</option>
+    <option value="Sales Representative">Sales Representative</option>
+    <option value="Research Director">Research Director</option>
+    <option value="Human Resources">Human Resources</option>
+  </select>
+</div>
+
+<!-- Job Satisfaction (1-4) -->
+<div class="form-group">
+  <label for="job_satisfaction">Job Satisfaction (1 = Low, 4 = High)</label>
+  <select id="job_satisfaction" name="job_satisfaction" class="form-control">
+    <option value="1">1 - Low</option>
+    <option value="2">2 - Medium</option>
+    <option value="3">3 - High</option>
+    <option value="4">4 - Very High</option>
+  </select>
+</div>
+
+<!-- Total Working Years -->
+<div class="form-group">
+  <label for="total_working_years">Total Working Years</label>
+  <input id="total_working_years" name="total_working_years" type="number" min="0" max="60" step="1" class="form-control" placeholder="e.g., 5">
+</div>
+
+<!-- Years At Company -->
+<div class="form-group">
+  <label for="years_at_company">Years at Company</label>
+  <input id="years_at_company" name="years_at_company" type="number" min="0" max="60" step="1" class="form-control" placeholder="e.g., 2">
+</div>
+
+<!-- Environment Satisfaction (1-4) -->
+<div class="form-group">
+  <label for="environment_satisfaction">Environment Satisfaction (1-4)</label>
+  <select id="environment_satisfaction" name="environment_satisfaction" class="form-control">
+    <option value="1">1 - Low</option>
+    <option value="2">2 - Medium</option>
+    <option value="3">3 - High</option>
+    <option value="4">4 - Very High</option>
+  </select>
+</div>
+
+<!-- Work Life Balance (1-4) -->
+<div class="form-group">
+  <label for="work_life_balance">Work Life Balance (1-4)</label>
+  <select id="work_life_balance" name="work_life_balance" class="form-control">
+    <option value="1">1 - Bad</option>
+    <option value="2">2 - Good</option>
+    <option value="3">3 - Better</option>
+    <option value="4">4 - Best</option>
+  </select>
+</div>
+
+<!-- Performance Rating (1-4) -->
+<div class="form-group">
+  <label for="performance_rating">Performance Rating (1-4)</label>
+  <select id="performance_rating" name="performance_rating" class="form-control">
+    <option value="1">1 - Low</option>
+    <option value="2">2 - Good</option>
+    <option value="3">3 - Excellent</option>
+    <option value="4">4 - Outstanding</option>
+  </select>
+</div>
+
+
+      <button type="submit">Predict</button>
+    </form>
+
+    <!-- ===== Embedded Meeting Recorder (replaces old "Or speak your input") ===== -->
+    <!-- make sure recorder.html exists in templates/ -->
+    {% include 'recorder.html' %}
+
+    <!-- ===== Auto-fill voice fields (reads keepwise_voice_autofill) ===== -->
+    <script>
+      (function(){
+        try {
+          const key = 'keepwise_voice_autofill';
+          const raw = localStorage.getItem(key);
+          if (!raw) return;
+          const readable = JSON.parse(raw || "{}");
+
+          function setByName(name, value) {
+            if (!value) return false;
+            const el = document.querySelector('[name="' + name + '"]');
+            if (!el) return false;
+            const tag = el.tagName.toLowerCase();
+            if (tag === 'input' || tag === 'textarea') {
+              el.value = value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+            if (tag === 'select') {
+              for (const opt of el.options) {
+                if (opt.value === String(value) || opt.textContent.trim().toLowerCase().includes(String(value).toLowerCase())) {
+                  el.value = opt.value;
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  return true;
+                }
+              }
+            }
+            return false;
+          }
+
+          setByName('Age', readable.Age);
+          setByName('BusinessTravel', readable.BusinessTravel);
+          setByName('Department', readable.Department);
+          setByName('Monthly Income', readable["Monthly Income"]);
+          setByName('OverTime', readable.OverTime);
+
+          localStorage.removeItem(key);
+          console.log('Voice autofill applied:', readable);
+        } catch (e) {
+          console.warn('Voice autofill failed:', e);
+        }
+      })();
+    </script>
+
+    <hr>
+
+    <form action="/bulk_predict" method="post" enctype="multipart/form-data">
+      <label>Upload CSV for bulk predictions</label>
+      <input type="file" name="file" accept=".csv">
+      <button type="submit">Upload & Predict</button>
+    </form>
+
+    <p>
+      <a href="/dashboard">View Dashboard</a> |
+      <a href="/admin">Admin (Predictions)</a>
+    </p>
+  </div>
+</body>
+</html>

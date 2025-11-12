@@ -1,0 +1,226 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Keepwise — Record Meeting</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{--bg:#f4f7fb;--card:#fff;--accent:#0b63ff;--muted:#6b7280}
+    body { font-family: Inter, Arial, system-ui; margin: 18px; background: var(--bg); color: #111; }
+    .card { max-width:920px; margin: 12px auto; background:var(--card); padding:18px; border-radius:10px; box-shadow:0 6px 20px rgba(30,40,60,0.06); }
+    h1 { margin:0 0 10px 0; font-size:20px; }
+    .controls { display:flex; gap:10px; align-items:center; margin-bottom:12px; }
+    button { background:var(--accent); color:#fff; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.secondary { background:#e6eefc; color:#004a9f }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .status { margin-top:8px; font-weight:600; color:#111; }
+    pre { background:#0b1220; color:#dbeafe; padding:12px; border-radius:8px; max-height:380px; overflow:auto; white-space:pre-wrap; }
+    .small { font-size:0.9rem; color:var(--muted); }
+    .meta { margin-top:8px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .badge { padding:6px 10px; border-radius:6px; background:#eef2ff; color:#003366; font-weight:600; }
+    .danger { background:#ffecec; color:#8a0b0b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🎙 Record Meeting (one-button)</h1>
+
+    <div class="controls">
+      <button id="startBtn">Start Recording</button>
+      <button id="stopBtn" disabled>Stop & Analyze</button>
+      <button id="downloadBtn" class="secondary" style="margin-left:auto" disabled>Download last clip</button>
+    </div>
+
+    <div class="status" id="status">Click <strong>Start Recording</strong> and speak. When done, click <strong>Stop & Analyze</strong>.</div>
+
+    <div style="margin-top:12px;">
+      <audio id="player" controls style="width:100%; display:none"></audio>
+    </div>
+
+    <div class="meta" style="margin-top:12px;">
+      <div class="badge" id="httpBadge">Status: —</div>
+      <div class="small" id="timeInfo"></div>
+      <button id="gotoMain" class="secondary" style="margin-left:auto">Go to Main Form</button>
+    </div>
+
+    <h3 style="margin-top:14px">Result / Server response</h3>
+    <pre id="result">No analysis yet.</pre>
+
+    <div style="margin-top:8px" class="small">This records audio in the browser and posts it directly to the server endpoint <code>/meeting_upload</code>. If the server returns parsed fields they will be saved to localStorage (key: <code>keepwise_voice_autofill</code>).</div>
+  </div>
+
+<script>
+(async function(){
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn  = document.getElementById('stopBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const gotoMain = document.getElementById('gotoMain');
+  const statusEl = document.getElementById('status');
+  const resultPre = document.getElementById('result');
+  const player = document.getElementById('player');
+  const httpBadge = document.getElementById('httpBadge');
+  const timeInfo = document.getElementById('timeInfo');
+
+  let mediaRecorder = null;
+  let chunks = [];
+  let lastBlob = null;
+  let startedAt = null;
+
+  function setStatus(s){ statusEl.textContent = s; console.debug("STATUS:", s); }
+  function setResult(j){ resultPre.textContent = typeof j === 'string' ? j : JSON.stringify(j,null,2); }
+  function setBadge(code, text, isError=false){
+    httpBadge.textContent = `Status: ${code} ${text ? ' - ' + text : ''}`;
+    httpBadge.className = isError ? 'badge danger' : 'badge';
+  }
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    setResult("Recording...");
+    setBadge('—','—');
+    setStatus("Requesting microphone permission...");
+    chunks = [];
+    lastBlob = null;
+    player.style.display = 'none';
+    timeInfo.textContent = '';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.addEventListener('dataavailable', (e) => {
+        if (e.data && e.data.size) chunks.push(e.data);
+      });
+      mediaRecorder.start();
+      startedAt = Date.now();
+      setStatus("Recording... Click Stop when finished.");
+    } catch (err) {
+      console.error(err);
+      setStatus("Microphone permission denied or not available.");
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      setResult("Error: " + (err && err.message ? err.message : String(err)));
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true;
+    setStatus("Stopping recorder and preparing upload...");
+    try {
+      if (!mediaRecorder) {
+        setStatus("No active recording.");
+        startBtn.disabled = false;
+        return;
+      }
+      mediaRecorder.stop();
+
+      // small delay so final chunks arrive
+      await new Promise(r=>setTimeout(r, 200));
+      const blob = new Blob(chunks, { type: 'audio/webm' }); // browser default
+      lastBlob = blob;
+
+      // enable download of the raw blob
+      downloadBtn.disabled = false;
+      downloadBtn.onclick = () => {
+        const url = URL.createObjectURL(lastBlob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'meeting_recording.webm';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      // show local playback
+      player.src = URL.createObjectURL(blob);
+      player.style.display = 'block';
+      try { await player.play(); } catch(e){ /* autoplay may be blocked */ }
+
+      // show recording duration
+      if (startedAt) {
+        const secs = Math.round((Date.now()-startedAt)/1000);
+        timeInfo.textContent = `Recorded: ${secs}s`;
+      }
+
+      // Build FormData and POST to server
+      setStatus("Uploading & analyzing... (this may take a few seconds)");
+      setResult("Uploading recorded audio to server for transcription/analysis...");
+
+      const fd = new FormData();
+      fd.append("audio", blob, "meeting_recording.webm");
+
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(), 90_000); // 90s safety timeout
+
+      let resp;
+      try {
+        resp = await fetch("http://127.0.0.1:5000/meeting_upload", {
+          method: "POST",
+          body: fd,
+          signal: controller.signal
+        });
+      } catch (fetchErr) {
+        clearTimeout(timeout);
+        console.error("Fetch failed:", fetchErr);
+        setBadge('ERR','Network', true);
+        setStatus("Network error while uploading: " + (fetchErr && fetchErr.message ? fetchErr.message : fetchErr));
+        setResult("Network upload failed. If this persists, convert to WAV and upload via the main form.");
+        startBtn.disabled = false;
+        return;
+      }
+      clearTimeout(timeout);
+
+      // read raw text (so we can show non-JSON replies)
+      const raw = await resp.text().catch(e => '');
+      // attempt JSON parse
+      let json = null;
+      try { json = raw ? JSON.parse(raw) : {}; } catch(e){ json = null; }
+
+      // display HTTP status
+      setBadge(resp.status, resp.statusText, !resp.ok);
+      if (!resp.ok) {
+        setStatus("Server returned error " + resp.status);
+        setResult({ http_status: resp.status, raw_body: raw || '(empty)' });
+        startBtn.disabled = false;
+        return;
+      }
+
+      // success
+      setStatus("Analysis complete (server returned 200)");
+      setResult(json !== null ? json : raw);
+
+      // save readable fields or per_speaker for autofill
+      try {
+        const readable = (json && (json.readable_fields || json.per_speaker)) ? (json.readable_fields || json.per_speaker) : null;
+        if (readable) {
+          localStorage.setItem('keepwise_voice_autofill', JSON.stringify(readable));
+          console.debug("Saved keepwise_voice_autofill to localStorage");
+        }
+      } catch(e){ console.warn("LocalStorage save failed", e); }
+
+    } catch (err) {
+      console.error(err);
+      setStatus("Unexpected error: " + (err && err.message ? err.message : err));
+      setResult("Error: " + (err && err.message ? err.message : String(err)));
+    } finally {
+      // cleanup & reset UI
+      try { mediaRecorder && (mediaRecorder.stream || []).getTracks().forEach(t=>t.stop()); } catch(e){}
+      mediaRecorder = null;
+      chunks = [];
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+      startedAt = null;
+    }
+  });
+
+  gotoMain.addEventListener('click', () => {
+    // navigate to main form; main form should read localStorage key keepwise_voice_autofill
+    window.location.href = '/';
+  });
+
+  // keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'r' && !startBtn.disabled) startBtn.click();
+    if (e.key === 's' && !stopBtn.disabled) stopBtn.click();
+  });
+
+})();
+</script>
+</body>
+</html>

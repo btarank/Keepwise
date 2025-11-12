@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Attrition Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { font-family: Inter, Arial, sans-serif; background:#f7f9fb; margin:0; padding:18px }
+    .box { max-width:1200px; margin:18px auto; background:#fff; border-radius:12px; padding:18px; box-shadow:0 8px 30px rgba(12,18,40,0.04) }
+    h1 { margin:0 0 14px 0; font-size:20px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
+    #chart1, #chart2, #chart3 { background:#fff; border-radius:8px; padding:6px; }
+    #chart3 { grid-column: 1 / -1; } /* full width */
+    .muted { color: #6b7280; font-size:13px; margin-top:8px; }
+    @media(max-width:900px){ .grid { grid-template-columns: 1fr } #chart3 { grid-column:1 } }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Attrition Dashboard</h1>
+    <div class="muted">Three client-side charts generated from static dataset (no backend changes required).</div>
+
+    <div class="grid" style="margin-top:12px">
+      <div id="chart1" style="height:360px"></div>
+      <div id="chart2" style="height:360px"></div>
+      <div id="chart3" style="height:360px"></div>
+    </div>
+
+    <p style="margin-top:14px"><a href="/">Home</a></p>
+  </div>
+
+<script>
+/*
+ Expects a static JSON file at /static/dashboard_data.json
+ Each entry should be an object, e.g.
+ { "Attrition":"Yes", "Department":"Sales", "MonthlyIncome":"5000", "YearsAtCompany":"3", ... }
+*/
+
+function toNum(v) {
+  if (v === null || v === undefined) return NaN;
+  const n = Number(String(v).replace(/[^0-9.\-]/g,''));
+  return isNaN(n) ? NaN : n;
+}
+
+fetch('/static/dashboard_data.json', { cache: 'no-cache' })
+.then(r => {
+  if (!r.ok) throw new Error('Failed to fetch dataset: ' + r.status);
+  return r.json();
+})
+.then(data => {
+  if (!Array.isArray(data) || data.length === 0) {
+    document.getElementById('chart1').innerText = 'No data found in /static/dashboard_data.json';
+    return;
+  }
+
+  // Normalize keys (case-insensitive)
+  const first = data[0];
+  const keys = Object.keys(first);
+  const findKey = (cands) => {
+    const low = keys.map(k => k.toLowerCase());
+    for (const c of cands) {
+      const idx = low.indexOf(c.toLowerCase());
+      if (idx !== -1) return keys[idx];
+    }
+    return null;
+  };
+  const kAttr = findKey(['Attrition','attrition']);
+  const kDept = findKey(['Department','department']);
+  const kIncome = findKey(['MonthlyIncome','monthlyincome','Monthly_Income']);
+  const kYears = findKey(['YearsAtCompany','yearsatcompany','Years At Company','TotalWorkingYears']);
+
+  // --- Chart 1: Attrition rate by Department ---
+  const dept = {};
+  data.forEach(row => {
+    const deptName = (kDept ? (row[kDept] || 'Unknown') : 'Unknown') || 'Unknown';
+    const attr = (kAttr ? String(row[kAttr] || '').toLowerCase() : '').trim();
+    if (!dept[deptName]) dept[deptName] = { left:0, total:0 };
+    dept[deptName].total++;
+    if (attr === 'yes' || attr === '1' || attr === 'true') dept[deptName].left++;
+  });
+  const deptLabels = Object.keys(dept);
+  const deptRates = deptLabels.map(d => dept[d].total ? (dept[d].left / dept[d].total) : 0);
+
+  const traceDept = {
+    x: deptLabels,
+    y: deptRates,
+    type: 'bar',
+    marker: { color: '#0b63ff' },
+    hovertemplate: '%{x}<br>Attrition rate: %{y:.2f}<extra></extra>'
+  };
+  const layoutDept = {
+    title: 'Attrition Rate by Department',
+    margin: { t:40, l:40, r:18, b:80 },
+    yaxis: { tickformat: '.0%', range:[0, Math.max(...deptRates,0.25) + 0.05] }
+  };
+  Plotly.newPlot('chart1',[traceDept], layoutDept, {responsive:true});
+
+  // --- Chart 2: Monthly Income distribution (histogram) ---
+  const incomes = data.map(r => toNum(kIncome ? r[kIncome] : r['MonthlyIncome'] || r['monthly_income'] || 0)).filter(n => !isNaN(n));
+  if (incomes.length) {
+    const traceHist = {
+      x: incomes,
+      type: 'histogram',
+      nbinsx: 12,
+      marker: { color: '#2b8cbf' },
+      hovertemplate: 'Income: %{x}<br>Count: %{y}<extra></extra>'
+    };
+    const layoutHist = {
+      title: 'Monthly Income Distribution',
+      margin: { t:40, l:40, r:18, b:60 },
+      xaxis: { title: 'Monthly Income' },
+      yaxis: { title: 'Count' }
+    };
+    Plotly.newPlot('chart2',[traceHist], layoutHist, {responsive:true});
+  } else {
+    document.getElementById('chart2').innerText = 'MonthlyIncome column not found or contains no numeric data.';
+  }
+
+  // --- Chart 3: Years at Company vs Attrition (scatter with jitter) ---
+  const yearsYes = [];
+  const yearsNo = [];
+  data.forEach(r => {
+    const yrs = toNum(kYears ? r[kYears] : r['YearsAtCompany'] || r['Years At Company'] || r['TotalWorkingYears']);
+    if (isNaN(yrs)) return;
+    const attr = (kAttr ? String(r[kAttr] || '').toLowerCase() : '').trim();
+    if (attr === 'yes' || attr === '1' || attr === 'true') yearsYes.push(yrs);
+    else yearsNo.push(yrs);
+  });
+
+  // add small jitter on x axis for visual separation
+  function jitterX(arr, xVal) {
+    return arr.map(v => ({ x: xVal + (Math.random()-0.5)*0.15, y: v }));
+  }
+  const sYes = jitterX(yearsYes, 1);
+  const sNo = jitterX(yearsNo, 0);
+
+  const traceStay = {
+    x: sNo.map(p=>p.x),
+    y: sNo.map(p=>p.y),
+    mode: 'markers',
+    type: 'scatter',
+    name: 'Stay',
+    marker: { color: '#16a34a', size: 6, opacity:0.8 }
+  };
+  const traceLeave = {
+    x: sYes.map(p=>p.x),
+    y: sYes.map(p=>p.y),
+    mode: 'markers',
+    type: 'scatter',
+    name: 'Leave',
+    marker: { color: '#f59e0b', size: 6, opacity:0.9 }
+  };
+  const layoutYears = {
+    title: 'Years at Company — Stay vs Leave',
+    margin: { t:40, l:60, r:18, b:60 },
+    xaxis: {
+      tickvals: [0,1],
+      ticktext: ['Stay','Leave'],
+      title: 'Attrition'
+    },
+    yaxis: { title: (kYears || 'Years at Company') }
+  };
+  Plotly.newPlot('chart3',[traceStay, traceLeave], layoutYears, {responsive:true});
+})
+.catch(err => {
+  console.error(err);
+  document.getElementById('chart1').innerText = 'Failed to load dataset: ' + err.message;
+  document.getElementById('chart2').innerText = '';
+  document.getElementById('chart3').innerText = '';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Keepwise — Single Prediction</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <style>
+    /* Small page-specific tweaks to keep consistent with dashboard look */
+    .page-wrap{max-width:1100px;margin:28px auto;padding:0 20px}
+    .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+    .card-grid{display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start}
+    .form-card{background:#fff;padding:20px;border-radius:12px;box-shadow:0 8px 30px rgba(12,18,40,0.06)}
+    .aside-card{background:#fff;padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(12,18,40,0.04)}
+    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+    .form-row .full{grid-column:1/-1}
+    label{display:block;font-weight:600;margin-bottom:6px;color:#223}
+    input[type="text"], input[type="number"], select {width:100%;padding:10px;border-radius:8px;border:1px solid #e6eaf0;background:#fbfdff}
+    .submit-row{margin-top:14px;display:flex;gap:10px;align-items:center}
+    .btn-primary{background:var(--accent);color:#fff;padding:10px 16px;border-radius:10px;border:none;font-weight:700}
+    .btn-ghost{background:#fff;color:var(--accent);padding:10px 14px;border-radius:10px;border:1px solid rgba(11,99,255,0.12)}
+    .hint{color:var(--muted);font-size:13px;margin-top:8px}
+    @media(max-width:900px){
+      .card-grid{grid-template-columns:1fr}
+      .form-row{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrap">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#4f9bff);display:flex;align-items:center;justify-content:center;color:white;font-weight:700">KW</div>
+        <div>
+          <div style="font-weight:700">Keepwise</div>
+          <div style="font-size:13px;color:var(--muted)">Single prediction</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center">
+        <a class="btn-ghost" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+        <a class="btn-ghost" href="{{ url_for('analytics') }}">Analytics</a>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <!-- Form area -->
+      <div class="form-card">
+        <h2 style="margin-top:0">Single prediction</h2>
+        <p class="hint">Enter employee attributes below and click <strong>Predict</strong>. This form posts to <code>/predict</code> (backend unchanged).</p>
+
+        <form id="single-predict-form" method="POST" action="{{ url_for('predict') }}">
+
+          <!-- Row 1 -->
+          <div class="form-row">
+            <div>
+              <label for="age">Age</label>
+              <input id="age" name="age" type="number" min="16" max="100" step="1" required>
+            </div>
+            <div>
+              <label for="business_travel">Business Travel</label>
+              <select id="business_travel" name="business_travel" required>
+                <option value="Travel_Rarely">Travel_Rarely</option>
+                <option value="Travel_Frequently">Travel_Frequently</option>
+                <option value="Non-Travel">Non-Travel</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="form-row">
+            <div>
+              <label for="department">Department</label>
+              <select id="department" name="department" required>
+                <option value="Research & Development">Research & Development</option>
+                <option value="Sales">Sales</option>
+                <option value="Human Resources">Human Resources</option>
+              </select>
+            </div>
+            <div>
+              <label for="monthly_income">Monthly Income</label>
+              <input id="monthly_income" name="monthly_income" type="number" min="0" step="1" required>
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="form-row">
+            <div>
+              <label for="overtime">Over Time</label>
+              <select id="overtime" name="overtime" required>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div>
+              <label for="job_role">Job Role</label>
+              <select id="job_role" name="job_role" required>
+                <option value="Sales Executive">Sales Executive</option>
+                <option value="Research Scientist">Research Scientist</option>
+                <option value="Laboratory Technician">Laboratory Technician</option>
+                <option value="Manufacturing Director">Manufacturing Director</option>
+                <option value="Healthcare Representative">Healthcare Representative</option>
+                <option value="Manager">Manager</option>
+                <option value="Sales Representative">Sales Representative</option>
+                <option value="Research Director">Research Director</option>
+                <option value="Human Resources">Human Resources</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="form-row">
+            <div>
+              <label for="job_satisfaction">Job Satisfaction (1-4)</label>
+              <select id="job_satisfaction" name="job_satisfaction">
+                <option value="1">1 - Low</option>
+                <option value="2">2 - Medium</option>
+                <option value="3" selected>3 - High</option>
+                <option value="4">4 - Very High</option>
+              </select>
+            </div>
+
+            <div>
+              <label for="total_working_years">Total Working Years</label>
+              <input id="total_working_years" name="total_working_years" type="number" min="0" max="60" step="1">
+            </div>
+          </div>
+
+          <!-- Row 5 -->
+          <div class="form-row">
+            <div>
+              <label for="years_at_company">Years at Company</label>
+              <input id="years_at_company" name="years_at_company" type="number" min="0" max="60" step="1">
+            </div>
+            <div>
+              <label for="environment_satisfaction">Environment Satisfaction (1-4)</label>
+              <select id="environment_satisfaction" name="environment_satisfaction">
+                <option value="1">1 - Low</option>
+                <option value="2">2 - Medium</option>
+                <option value="3" selected>3 - High</option>
+                <option value="4">4 - Very High</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 6 -->
+          <div class="form-row">
+            <div>
+              <label for="work_life_balance">Work Life Balance (1-4)</label>
+              <select id="work_life_balance" name="work_life_balance">
+                <option value="1">1 - Bad</option>
+                <option value="2">2 - Good</option>
+                <option value="3" selected>3 - Better</option>
+                <option value="4">4 - Best</option>
+              </select>
+            </div>
+            <div>
+              <label for="performance_rating">Performance Rating (1-4)</label>
+              <select id="performance_rating" name="performance_rating">
+                <option value="1">1 - Low</option>
+                <option value="2">2 - Good</option>
+                <option value="3" selected>3 - Excellent</option>
+                <option value="4">4 - Outstanding</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="submit-row">
+            <button class="btn-primary" type="submit">Predict</button>
+            <a class="btn-ghost" href="{{ url_for('dashboard') }}">Cancel</a>
+          </div>
+        </form>
+      </div>
+
+      <!-- Aside area: history or tips -->
+      <aside class="aside-card">
+        <h3 style="margin-top:0">Tips & history</h3>
+        <p class="hint">Make sure values match those used during training (e.g., JobRole spelling). If you retrain with new columns, replace the model artifact in <code>models/</code>.</p>
+        <hr style="border:none;border-top:1px solid #f0f3f7;margin:12px 0">
+        <p style="font-weight:600;margin-bottom:6px">Recent predictions</p>
+        <div id="history" style="font-size:13px;color:var(--muted)">Loading recent predictions…</div>
+        <script>
+          // fetch recent predictions (if your app exposes an endpoint to list history)
+          fetch('/api/predictions').then(r=>r.json()).then(j=>{
+            if(!Array.isArray(j)) return;
+            const el = document.getElementById('history');
+            el.innerHTML = j.slice(0,6).map(item=>{
+              const t = new Date(item.timestamp).toLocaleString();
+              return `<div style="margin-bottom:8px"><strong>${item.prediction ? 'Leave' : 'Stay'}</strong> • ${item.probability.toFixed(2)} • <div style="color:var(--muted);font-size:12px">${t}</div></div>`;
+            }).join('');
+          }).catch(()=>{document.getElementById('history').innerText = 'No history available.'});
+        </script>
+      </aside>
+    </div>
+  </div>
+  <!-- prediction on same page -->
+
+  <script>
+(function() {
+  // select by id (no Jinja inside JS)
+  const form = document.getElementById('single-predict-form');
+  const historyEl = document.getElementById('history');
+  const STORAGE_KEY = 'keepwise_recent_predictions_v1';
+  const MAX_HISTORY = 20;
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function saveHistory(arr) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(arr.slice(0, MAX_HISTORY))); } catch(e) {}
+  }
+
+  function renderHistory() {
+    const hist = loadHistory();
+    if (!historyEl) return;
+    if (!hist.length) {
+      historyEl.innerHTML = 'No history available.';
+      return;
+    }
+    historyEl.innerHTML = hist.map(item => {
+      const t = new Date(item.timestamp).toLocaleString();
+      const prob = (typeof item.probability === 'number' && !isNaN(item.probability)) ? item.probability.toFixed(2) : '-';
+      return `
+        <div style="margin-bottom:8px">
+          <strong>${escapeHtml(item.label || 'Prediction')}</strong> • ${prob}
+          <div style="color:var(--muted);font-size:12px">${escapeHtml(t)}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    if (typeof s !== 'string') return s;
+    return s.replace(/[&<>"']/g, function(m){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[m];
+    });
+  }
+
+  function parsePrediction(text) {
+    // look for "Employee is likely to leave" or similar
+    const labelMatch = text.match(/Employee\s+is\s+[^\n<]+/i);
+    const probMatch = text.match(/Probability[:\s]*([0-9]*\.?[0-9]+)/i);
+    const label = labelMatch ? labelMatch[0].trim() : 'Prediction';
+    const prob = probMatch ? parseFloat(probMatch[1]) : null;
+    return { label, probability: prob };
+  }
+
+  if (!form) {
+    console.warn('Form with id "single-predict-form" not found. AJAX stacking will not work.');
+    return;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button[type="submit"]');
+    const old = btn ? btn.innerText : null;
+    if (btn) { btn.disabled = true; btn.innerText = 'Predicting...'; }
+
+    try {
+      const data = new FormData(form);
+      const res = await fetch(form.action, { method: 'POST', body: data, credentials: 'same-origin' });
+      const text = await res.text();
+      const { label, probability } = parsePrediction(text);
+      const entry = { label, probability, timestamp: Date.now() };
+      const hist = loadHistory();
+      hist.unshift(entry);
+      saveHistory(hist);
+      renderHistory();
+    } catch (err) {
+      console.error('Prediction request failed', err);
+      // optional fallback: allow normal submission if AJAX fails
+      // form.submit();
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerText = old; }
+    }
+  });
+
+  // initial render on page load
+  renderHistory();
+})();
+</script>
+
+   
+</body>
+</html>

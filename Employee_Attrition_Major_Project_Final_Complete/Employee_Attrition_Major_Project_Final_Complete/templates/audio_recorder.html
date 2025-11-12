@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Keepwise — Audio Recorder</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* page-specific */
+    .rec-wrap{max-width:900px;margin:28px auto;padding:20px}
+    .rec-stage{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+    .rec-card{flex:1;min-width:320px;background:#fff;border-radius:12px;padding:20px;box-shadow:0 8px 30px rgba(12,18,40,0.06)}
+    .rec-visual{height:120px;border-radius:8px;background:linear-gradient(180deg,#f6f8fb,#fff);display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:600}
+    .controls{display:flex;gap:12px;margin-top:14px}
+    .rec-btn{width:120px;padding:12px;border-radius:10px;border:none;font-weight:700;cursor:pointer}
+    .rec-btn.record{background:linear-gradient(180deg,#ff4d4f,#e60000);color:#fff}
+    .rec-btn.stop{background:#f3f4f6;color:#111;border:1px solid rgba(16,24,40,0.06)}
+    .rec-btn.upload{background:linear-gradient(180deg,#0b63ff,#0066e6);color:#fff}
+    .status{margin-top:12px;color:var(--muted);font-size:14px}
+    .small{font-size:13px;color:var(--muted)}
+    @media(max-width:720px){ .rec-stage{flex-direction:column} .rec-visual{height:90px} .rec-btn{width:100%} }
+  </style>
+</head>
+<body>
+  <div class="rec-wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div>
+        <div style="font-weight:700">Keepwise</div>
+        <div style="font-size:13px;color:var(--muted)">Audio recorder</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <a class="btn-ghost" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+        <a class="btn-ghost" href="{{ url_for('single') }}">Single Prediction</a>
+      </div>
+    </div>
+
+    <div class="rec-stage">
+      <div class="rec-card">
+        <h3 style="margin-top:0">Record meeting audio</h3>
+        <p class="small">Press <strong>Record</strong> to start capturing audio from your microphone. When done, press <strong>Stop</strong>, then <strong>Upload</strong> to send the file to the server for transcription and analysis.</p>
+
+        <div class="rec-visual" id="visual">No recording yet</div>
+
+        <div class="controls">
+          <button id="recordBtn" class="rec-btn record">Record</button>
+          <button id="stopBtn" class="rec-btn stop" disabled>Stop</button>
+          <button id="uploadBtn" class="rec-btn upload" disabled>Upload</button>
+        </div>
+
+        <div class="status" id="status">Status: idle</div>
+        <div style="margin-top:10px;font-size:13px;color:var(--muted)">
+          <strong>Note:</strong> Audio is uploaded as a single file under form field name <code>audio</code>, matching the server's expected input.
+        </div>
+      </div>
+
+      <!-- Separate server response card (renders server summary / raw JSON) -->
+<div id="serverBlock" class="rec-card" style="margin-top:14px; background:#fff; color:#111;">
+  <div style="font-weight:700; margin-bottom:8px">Server response</div>
+  <div id="serverBlockInner" style="color:#374151; font-size:14px;">
+    No response yet.
+  </div>
+</div>
+
+
+      <aside style="width:320px;min-width:260px">
+        <div class="rec-card">
+          <h4 style="margin:0 0 8px 0">Upload history</h4>
+          <div id="history" class="small">No uploads yet.</div>
+          <hr style="border:none;border-top:1px solid #f0f3f7;margin:12px 0">
+          <h4 style="margin:0 0 8px 0">Tips</h4>
+          <ul class="small" style="padding-left:18px;margin:0">
+            <li>Use a quiet room for better transcription.</li>
+            <li>Long recordings may take longer to transcribe on the server.</li>
+            <li>If uploads fail, check server logs for `meeting_upload` errors.</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Recorder script (we'll supply static/js/recorder.js next). -->
+  <script src="{{ url_for('static', filename='js/recorder.js') }}"></script>
+
+  <!--NEW CHANGE-->
+  <script>
+(function(){
+  // Target the exact container you already have in the template
+  const containerId = 'serverBlockInner';
+  const parentId = 'serverBlock';
+  const OBSERVE_TIMEOUT = 10000;
+
+  function tryParseJson(text) {
+    try { return JSON.parse(text); }
+    catch(e) {
+      try { return JSON.parse(text.replace(/\\"/g, '"').replace(/\\n/g, '\n')); }
+      catch(e2) { return null; }
+    }
+  }
+  function escapeHtml(s){ if (s==null) return ''; return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#039;"}[m])); }
+
+  // map speaker object to prediction string (uses speaker.prediction if present)
+  function speakerPredictionFrom(sp) {
+    if (!sp) return 'likely to stay';
+    if (sp.prediction === 0 || sp.prediction === 1) return sp.prediction === 1 ? 'likely to leave' : 'likely to stay';
+    const sent = Array.isArray(sp.sentiment) && sp.sentiment[0] ? sp.sentiment[0] : (sp.sentiment && typeof sp.sentiment === 'object' ? sp.sentiment : null);
+    if (sent) {
+      const lab = String(sent.label || '').toLowerCase();
+      const sc = Number(sent.score || 0);
+      if (lab === 'negative' && sc >= 0.5) return 'likely to leave';
+      if (lab === 'positive' && sc >= 0.5) return 'likely to stay';
+      return (sc >= 0.5 && lab !== 'negative') ? 'likely to stay' : 'likely to leave';
+    }
+    const p = Number(sp.probability);
+    if (!isNaN(p)) return p > 0.5 ? 'likely to leave' : 'likely to stay';
+    return 'likely to stay';
+  }
+
+  // Build the per-speaker preformatted HTML
+  function buildPerSpeakerPre(perSpeakerObj) {
+    const keys = Object.keys(perSpeakerObj || {}).sort((a,b)=>{
+      const na = (a.match(/(\d+)$/)||[])[1]||a;
+      const nb = (b.match(/(\d+)$/)||[])[1]||b;
+      return Number(na)-Number(nb);
+    });
+    if (!keys.length) return null;
+    const pre = document.createElement('pre');
+    pre.style.background = '#0b1220';
+    pre.style.color = '#e6edf3';
+    pre.style.padding = '12px';
+    pre.style.borderRadius = '8px';
+    pre.style.fontFamily = 'monospace';
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.fontSize = '13px';
+    pre.style.lineHeight = '1.6';
+
+    const lines = keys.map(k => {
+      const sp = perSpeakerObj[k] || {};
+      const labObj = Array.isArray(sp.sentiment) && sp.sentiment[0] ? sp.sentiment[0] : (sp.sentiment && typeof sp.sentiment === 'object' ? sp.sentiment : null);
+      const lab = labObj ? String(labObj.label || '').toUpperCase() : '';
+      const scoreStr = labObj && labObj.score !== undefined && !isNaN(Number(labObj.score)) ? ` (${Number(labObj.score).toFixed(2)})` : '';
+      const pred = speakerPredictionFrom(sp);
+      const name = String(k).replace(/^SPEAKER_/i,'speaker_');
+      // colored tokens (simple)
+      const speakerHtml = `<span style="color:#f472b6;font-weight:700">${escapeHtml(name)}</span>`;
+      const sentimentHtml = `<span style="color:#fb7185;font-weight:700"> : sentiment: </span><span style="color:#f472b6">${escapeHtml(lab)}</span>`;
+      const scoreHtml = scoreStr ? `<span style="color:#93c5fd">${escapeHtml(scoreStr)}</span>` : '';
+      const predColor = pred.includes('leave') ? '#f59e0b' : '#16a34a';
+      const predHtml = `<span style="color:${predColor}; font-weight:700"> : prediction: ${escapeHtml(pred)}</span>`;
+      return `${speakerHtml}${sentimentHtml}${scoreHtml}${predHtml}`;
+    }).join('\n\n');
+
+    pre.innerHTML = lines;
+    return pre;
+  }
+
+  // Hide global prediction (simple approach: remove nodes with those phrases)
+  function hideGlobalPrediction(container) {
+    if (!container) return;
+    const phrases = ['employee is likely','employee likely','probability','probability:'];
+    const nodes = Array.from(container.querySelectorAll('*'));
+    for (const n of nodes) {
+      if (!n || !n.textContent) continue;
+      const txt = n.textContent.toLowerCase();
+      if (phrases.some(p => txt.includes(p))) {
+        n.style.display = 'none';
+      }
+    }
+  }
+
+  // Main transform: looks for JSON in container text, uses per_speaker if available
+  function transformServerBlockOnce() {
+    const container = document.getElementById(containerId);
+    const outer = document.getElementById(parentId);
+    if (!container) return;
+    // If we've already applied, don't reapply
+    if (outer && outer.__applied_per_speaker) return;
+
+    const text = container.textContent || container.innerText || '';
+    if (!text || text.trim().length < 3) return;
+
+    // Try to extract JSON substring { ... }
+    const first = text.indexOf('{');
+    const last = text.lastIndexOf('}');
+    if (first === -1 || last === -1 || last <= first) return;
+    const jsonText = text.slice(first, last+1);
+    const parsed = tryParseJson(jsonText);
+    if (!parsed) return;
+
+    // We have parsed JSON: if per_speaker exists, render that
+    if (parsed.per_speaker && typeof parsed.per_speaker === 'object' && Object.keys(parsed.per_speaker).length) {
+      hideGlobalPrediction(container);
+
+      // build pre and insert at top of container (before everything)
+      const pre = buildPerSpeakerPre(parsed.per_speaker);
+      if (pre) {
+        // insert a small wrapper for spacing
+        const wrapper = document.createElement('div');
+        wrapper.style.marginBottom = '8px';
+        wrapper.appendChild(pre);
+        container.insertBefore(wrapper, container.firstChild);
+      }
+
+      // create or wire raw toggle: if there's an anchor with "raw server response", use it; otherwise create one
+      let toggle = Array.from(container.querySelectorAll('a')).find(a => /raw server response/i.test(a.textContent));
+      const rawClone = document.createElement('pre');
+      rawClone.style.background = '#0b1220';
+      rawClone.style.color = '#e6edf3';
+      rawClone.style.padding = '12px';
+      rawClone.style.borderRadius = '8px';
+      rawClone.style.fontFamily = 'monospace';
+      rawClone.style.whiteSpace = 'pre-wrap';
+      rawClone.style.fontSize = '12px';
+      rawClone.style.maxHeight = '260px';
+      rawClone.style.overflow = 'auto';
+      rawClone.style.display = 'none';
+      rawClone.textContent = JSON.stringify(parsed, null, 2);
+
+      if (!toggle) {
+        toggle = document.createElement('a');
+        toggle.href = '#';
+        toggle.textContent = 'View raw server response';
+        toggle.style.color = '#2563eb';
+        toggle.style.display = 'inline-block';
+        toggle.style.marginTop = '8px';
+        container.appendChild(toggle);
+      }
+      toggle.addEventListener('click', function(ev){
+        ev.preventDefault();
+        if (rawClone.style.display === 'none') { rawClone.style.display='block'; toggle.textContent='Hide raw response'; }
+        else { rawClone.style.display='none'; toggle.textContent='View raw server response'; }
+      });
+      container.appendChild(rawClone);
+
+      if (outer) outer.__applied_per_speaker = true;
+    } else {
+      // no per_speaker: no-op (leave global UI alone) but mark applied to avoid repeated tries
+      if (outer) outer.__applied_per_speaker = true;
+    }
+  }
+
+  // Observe the container for changes (server injects after upload)
+  function observeContainer() {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    // immediate attempt (in case JSON already present)
+    transformServerBlockOnce();
+
+    const obs = new MutationObserver((mutations) => {
+      transformServerBlockOnce();
+    });
+    obs.observe(container, { childList: true, subtree: true, characterData: true });
+    // safety stop
+    setTimeout(()=>obs.disconnect(), OBSERVE_TIMEOUT);
+  }
+
+  // Start when DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', observeContainer);
+    setTimeout(observeContainer, 600);
+  } else {
+    setTimeout(observeContainer, 200);
+  }
+
+  // debug helper:
+  window.applyPerSpeakerToServerBlock = transformServerBlockOnce;
+})();
+</script>
+
+</body>
+</html>

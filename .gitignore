@@ -1,0 +1,34 @@
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+data/
+audio/
+uploads/
+.vscode/
+.idea/
+.DS_store
+Thumbs.db
+*.log
+EOF\
+cat.gitignore
+# virtual envs
+venv/
+myenv/
+.env
+
+# models, data, audio
+models/
+data/
+audio/
+uploads/
+
+# IDE / OS
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db

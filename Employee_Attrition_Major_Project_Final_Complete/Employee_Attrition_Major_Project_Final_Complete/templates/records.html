@@ -1,0 +1,287 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Keepwise — Meeting Records</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { background:#f4f7fb; font-family: Inter, Arial, sans-serif; color:#111; }
+    .container { max-width:980px; margin:18px auto; padding:10px; }
+    .rec { background:#fff; margin:12px 0; padding:14px; border-radius:8px; box-shadow:0 4px 12px rgba(2,6,23,0.06); }
+    .meta { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    pre { background:#0b1220; color:#dbeafe; padding:10px; border-radius:6px; max-height:180px; overflow:auto; white-space:pre-wrap; }
+    audio { width:100%; margin-top:8px; }
+    .small { color:#6b7280; font-size:0.92rem; }
+    .btn { background:#0b63ff; color:#fff; border:0; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .muted-link { color:#4b5563; text-decoration:underline; }
+    /* modal */
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:999; }
+    .modal { background:#fff; width:880px; max-width:95%; border-radius:10px; padding:18px; box-shadow:0 12px 40px rgba(5,10,25,0.35); }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .close-btn { background:#eee; border:0; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .segment { display:flex; gap:8px; align-items:center; padding:8px 6px; border-bottom:1px solid #f1f5f9; }
+    .segment .meta { justify-content:flex-start; }
+    .speaker-tag { background:#eef2ff; color:#003366; padding:6px 10px; border-radius:8px; font-weight:700; }
+    .jump-btn { background:#0b63ff; color:#fff; border:0; padding:6px 10px; border-radius:6px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Meeting Records</h1>
+    <p class="small">Recent recordings and analyses. Click View Details for diarization and per-speaker segments.</p>
+
+    {% if records and records|length > 0 %}
+      {% for r in records %}
+        <div class="rec" id="rec-{{ r.id }}">
+          <div class="meta">
+            <div>
+              <strong>#{{ r.id }}</strong> &nbsp; <span class="small">— {{ r.created_at }}</span>
+            </div>
+
+            <div style="display:flex; gap:8px; align-items:center;">
+              {% if r.audio_url %}
+                <button class="btn" onclick="document.getElementById('player-inline-{{ r.id }}').play()">Play</button>
+                <a class="muted-link" href="{{ r.audio_url }}" download>Download</a>
+              {% else %}
+                <span class="small">No audio</span>
+              {% endif %}
+
+              <button class="btn" style="background:#06b6d4; margin-left:8px;"
+                      data-record-id="{{ r.id or '' }}"
+                      onclick="openDetails(this.dataset.recordId)">
+                View Details
+              </button>
+            </div>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div><strong>Transcript</strong></div>
+            <pre>{{ r.transcript }}</pre>
+          </div>
+
+          <div style="margin-top:8px;">
+            <strong>Parsed fields</strong>
+            <pre>{{ r.readable_fields | tojson(indent=2) }}</pre>
+          </div>
+
+          <div style="margin-top:8px;">
+            <strong>Sentiment</strong>
+            <pre>{{ r.sentiment | tojson(indent=2) }}</pre>
+          </div>
+
+          {% if r.audio_url %}
+            <audio id="player-inline-{{ r.id }}" controls preload="none" src="{{ r.audio_url }}"></audio>
+          {% endif %}
+
+          {# Render diarization JSON into a hidden element that client-side JS will parse.
+             We ensure a valid JSON string is produced even if diarization is empty.
+             Prefer r.diarization, otherwise try r.raw_response.per_speaker or r.raw_response.diarization #}
+          {% set diar_obj = r.diarization if r.diarization is defined and r.diarization is not none else (r.raw_response.get('per_speaker') if (r.raw_response is mapping) else (r.raw_response.get('diarization') if (r.raw_response is mapping) else {})) %}
+          <div style="display:none" id="diar-data-{{ r.id }}">{{ diar_obj | tojson | safe }}</div>
+
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="rec">No records found.</div>
+    {% endif %}
+
+    <p style="margin-top:18px;"><a href="/" class="muted-link">Back to Dashboard</a></p>
+  </div>
+
+  <!-- Modal backdrop -->
+  <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalTitle">Record details</h3>
+          <div class="small" id="modalSub"></div>
+        </div>
+        <div>
+          <button class="close-btn" onclick="closeModal()">Close</button>
+        </div>
+      </div>
+
+      <hr/>
+
+      <div id="modalBody">
+        <div style="margin-bottom:12px;">
+          <strong>Audio</strong>
+          <div style="margin-top:6px;">
+            <audio id="modalPlayer" controls preload="none" style="width:100%"></audio>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <strong>Speaker segments</strong>
+          <div id="segmentsList" style="margin-top:8px; border-radius:6px; overflow:auto; max-height:280px; background:#fbfdff; padding:6px;"></div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <strong>Raw diarization JSON</strong>
+          <pre id="rawDiar" style="max-height:160px; overflow:auto; background:#0b1220; color:#dbeafe; padding:8px; border-radius:6px"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function openDetails(id){
+    if(!id) return;
+    const modal = document.getElementById('modalBackdrop');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalSub = document.getElementById('modalSub');
+    const modalPlayer = document.getElementById('modalPlayer');
+    const segmentsList = document.getElementById('segmentsList');
+    const rawDiar = document.getElementById('rawDiar');
+
+    // load diarization JSON (may be empty {})
+    let diar = {};
+    try {
+      const diarEl = document.getElementById('diar-data-' + id);
+      if (diarEl && diarEl.textContent && diarEl.textContent.trim().length) {
+        diar = JSON.parse(diarEl.textContent);
+      } else {
+        diar = {};
+      }
+    } catch(e) {
+      console.warn("Could not parse diarization JSON for id", id, e);
+      diar = {};
+    }
+
+    // set header counts safely
+    const segCount = (diar.segments && Array.isArray(diar.segments)) ? diar.segments.length : 0;
+    const speakerCount = diar.per_speaker ? Object.keys(diar.per_speaker).length : 0;
+    modalTitle.textContent = 'Record #' + id + ' — Details';
+    modalSub.textContent = 'Segments: ' + segCount + ', Speakers: ' + speakerCount;
+
+    // set audio source from inline player if present, else leave blank
+    const inlinePlayer = document.getElementById('player-inline-' + id);
+    if (inlinePlayer && inlinePlayer.src) {
+      modalPlayer.src = inlinePlayer.src;
+    } else {
+      modalPlayer.removeAttribute('src');
+    }
+    modalPlayer.currentTime = 0;
+
+      // build segments list (with per-speaker prediction if present)
+    segmentsList.innerHTML = '';
+    if (diar.segments && diar.segments.length) {
+      // per-speaker metadata available?
+      const perSpeaker = diar.per_speaker || {};
+      diar.segments.forEach((seg, idx) => {
+        const row = document.createElement('div');
+        row.className = 'segment';
+        const label = document.createElement('div');
+        label.innerHTML = '<span class="speaker-tag">' + (seg.speaker || ('SPEAKER_' + (idx+1))) + '</span>';
+        const info = document.createElement('div');
+        info.style.flex = '1';
+        const start = (typeof seg.start === 'number') ? seg.start.toFixed(2) : seg.start;
+        const end = (typeof seg.end === 'number') ? seg.end.toFixed(2) : seg.end;
+        const duration = (typeof seg.start === 'number' && typeof seg.end === 'number') ? (seg.end - seg.start).toFixed(2) : '—';
+        info.innerHTML = `<div style="font-weight:600">Segment ${idx+1}</div>
+                          <div class="small">Start: ${start}s — End: ${end}s — Duration: ${duration}s</div>`;
+
+        // prediction badge (if we have per_speaker data)
+        const badgeWrap = document.createElement('div');
+        badgeWrap.style.marginLeft = '12px';
+        badgeWrap.style.display = 'flex';
+        badgeWrap.style.flexDirection = 'column';
+        badgeWrap.style.alignItems = 'flex-end';
+
+        const speakerId = seg.speaker;
+        if (diar.per_speaker && diar.per_speaker[speakerId]) {
+          // diar.per_speaker[speakerId] may be array of segments; check top-level resp.per_speaker if present
+          // attempt to find per-speaker prediction attached at top-level resp (server included resp.per_speaker)
+          let spInfo = null;
+          try {
+            // the server attaches per_speaker at top-level JSON returned to client, accessible as `json` variable earlier.
+            // But we loaded diar from hidden element only. If resp.per_speaker is present, it is likely merged into diar or as top-level.
+            // Try to find it:
+            if (diar.per_speaker && diar.per_speaker[speakerId] && typeof diar.per_speaker[speakerId] === 'object' && diar.per_speaker[speakerId].prediction !== undefined) {
+              spInfo = diar.per_speaker[speakerId];
+            } else if (window.__keepwise_records && window.__keepwise_records[speakerId]) {
+              spInfo = window.__keepwise_records[speakerId];
+            } else if (diar.per_speaker[speakerId].meta) {
+              spInfo = diar.per_speaker[speakerId].meta;
+            }
+          } catch(e) { spInfo = null; }
+
+          if (!spInfo && window.lastServerJson && lastServerJson.per_speaker && lastServerJson.per_speaker[speakerId]) {
+            spInfo = lastServerJson.per_speaker[speakerId];
+          }
+
+          // fallback: check global `diar` top-level per_speaker_results if present
+          if (!spInfo && diar.per_speaker && typeof diar.per_speaker[speakerId] === 'object' && diar.per_speaker[speakerId].prediction !== undefined) {
+            spInfo = diar.per_speaker[speakerId];
+          }
+
+          // If still not found, try to read resp.per_speaker from hidden element `diar-data-<id>` (we stored resp.per_speaker there earlier)
+          // Now if spInfo exists and includes prediction/probability, show badge:
+          if (spInfo && spInfo.prediction !== undefined) {
+            const predLabel = spInfo.prediction === 1 ? 'Likely to leave' : 'Likely to stay';
+            const prob = (typeof spInfo.probability === 'number') ? (spInfo.probability * 100).toFixed(0) + '%' : (spInfo.probability || '—');
+            const badge = document.createElement('div');
+            badge.style.padding = '6px 8px';
+            badge.style.borderRadius = '8px';
+            badge.style.fontWeight = '700';
+            badge.style.fontSize = '0.95rem';
+            badge.textContent = `${predLabel} (${prob})`;
+            if (spInfo.prediction === 1) {
+              badge.style.background = '#fff4e5';
+              badge.style.color = '#9a3412';
+            } else {
+              badge.style.background = '#ecfdf5';
+              badge.style.color = '#065f46';
+            }
+            badgeWrap.appendChild(badge);
+          }
+        }
+
+        const jump = document.createElement('button');
+        jump.className = 'jump-btn';
+        jump.textContent = 'Jump & Play';
+        jump.onclick = (e) => {
+          e.preventDefault();
+          if (!modalPlayer.src) return;
+          try {
+            modalPlayer.currentTime = Number(seg.start || 0);
+            modalPlayer.play();
+          } catch(err) {
+            console.warn("Could not jump player:", err);
+          }
+        };
+
+        row.appendChild(label);
+        row.appendChild(info);
+        row.appendChild(badgeWrap);
+        row.appendChild(jump);
+        segmentsList.appendChild(row);
+      });
+    } else {
+      segmentsList.innerHTML = '<div class="small">No diarization segments available for this record.</div>';
+    }
+
+    rawDiar.textContent = JSON.stringify(diar, null, 2);
+
+    // show modal
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    // autofocus player
+    setTimeout(()=>{ try{ modalPlayer.focus(); } catch(e){} }, 300);
+  }
+
+  function closeModal(){
+    const modal = document.getElementById('modalBackdrop');
+    const modalPlayer = document.getElementById('modalPlayer');
+    if (modalPlayer) modalPlayer.pause();
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  // close on ESC
+  window.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') closeModal();
+  });
+</script>
+</body>
+</html>

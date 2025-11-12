@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Keepwise — Dashboard</title>
+  <!-- Link to CSS (will provide next). If missing, page still works with default styles -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <style>
+    /* Minimal inline fallback so layout is usable even before CSS file is added */
+    :root{
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --accent: #0b63ff;
+      --muted: #6b7280;
+      --glass: rgba(255,255,255,0.6);
+      --radius: 12px;
+      --maxw: 1100px;
+    }
+    body{font-family: Inter, system-ui, Arial; margin:0; background:var(--bg); color:#111}
+    .container{max-width:var(--maxw); margin:36px auto; padding:0 20px;}
+    header{display:flex;align-items:center;justify-content:space-between;padding:14px 0}
+    .brand{display:flex;gap:12px;align-items:center}
+    .brand .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#4f9bff);display:flex;align-items:center;justify-content:center;color:white;font-weight:700}
+    nav a{margin-left:16px;color:var(--muted);text-decoration:none}
+    .hero{display:grid;grid-template-columns:1fr 420px;gap:28px;align-items:center;margin-top:20px}
+    .hero .eyebrow{color:var(--accent);font-weight:600;margin-bottom:8px}
+    .hero h1{margin:0 0 12px;font-size:28px}
+    .hero p{margin:0;color:var(--muted);line-height:1.5}
+    .hero img{width:100%;height:auto;border-radius:14px;box-shadow:0 6px 20px rgba(20,30,60,0.08);background:#fff}
+    .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+    .card{background:var(--card);padding:18px;border-radius:11px;box-shadow:0 6px 18px rgba(12,18,40,0.04);display:flex;flex-direction:column;gap:12px}
+    .card h3{margin:0;font-size:16px}
+    .card p{margin:0;color:var(--muted);font-size:14px}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:var(--accent);color:white;text-decoration:none;font-weight:600}
+    footer{margin-top:40px;padding:20px 0;color:var(--muted);font-size:13px;border-top:1px solid rgba(16,24,40,0.03)}
+    @media(max-width:900px){
+      .hero{grid-template-columns:1fr; text-align:center}
+      .cards{grid-template-columns:1fr}
+      nav a{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="logo">KW</div>
+        <div>
+          <div style="font-weight:700">Keepwise</div>
+          <div style="font-size:12px;color:var(--muted)">Meeting health & attrition insights</div>
+        </div>
+      </div>
+      <nav>
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('single') }}">Single Prediction</a>
+        <a href="{{ url_for('recorder') }}">Audio Recorder</a>
+        <a href="{{ url_for('bulk') }}">Bulk Prediction</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">Keepwise</div>
+          <h1>Measure meeting health. Predict employee attrition.</h1>
+          <p>
+            Keepwise helps teams capture meeting audio, extract insights and estimate attrition risk.
+            Use the Single Prediction form for one-off evaluations, the Audio Recorder to transcribe meetings,
+            or run bulk predictions using CSV upload. All predictions use your backend model — unchanged.
+          </p>
+
+          <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap">
+            <a class="btn" href="{{ url_for('single') }}">Single prediction</a>
+            <a class="btn" href="{{ url_for('recorder') }}" style="background:#fff;color:var(--accent);border:1px solid rgba(11,99,255,0.12)">Audio recorder</a>
+            <a class="btn" href="{{ url_for('bulk') }}" style="background:#fff;color:var(--accent);border:1px solid rgba(11,99,255,0.12)">Bulk prediction</a>
+          </div>
+        </div>
+
+        <div>
+          <!-- Placeholder hero image: replace static/images/hero.jpg with your corporate image -->
+          <img src="{{ url_for('static', filename='images/hero.jpg') }}" alt="Keepwise illustration" onerror="this.style.display='none'">
+        </div>
+      </section>
+
+      <section class="cards" aria-label="features">
+        <div class="card">
+          <h3>Single prediction</h3>
+          <p>Enter employee attributes and get an immediate attrition prediction from the trained model.</p>
+          <a class="btn" href="{{ url_for('single') }}">Open</a>
+        </div>
+
+        <div class="card">
+          <h3>Audio recorder</h3>
+          <p>Record meeting audio, upload it to the server for transcription and meeting-level risk analysis.</p>
+          <a class="btn" href="{{ url_for('recorder') }}">Open</a>
+        </div>
+
+        <div class="card">
+          <h3>Bulk prediction</h3>
+          <p>Upload a CSV of employees and run batch predictions. Progress is shown and results downloadable.</p>
+          <a class="btn" href="{{ url_for('bulk') }}">Open</a>
+        </div>
+      </section>
+
+      <footer>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div>© {{ now().year }} Keepwise — An AI powered employee attrition and engagement prediction system. </div>
+         
+        </div>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

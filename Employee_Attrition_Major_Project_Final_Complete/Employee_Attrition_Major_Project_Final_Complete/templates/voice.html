@@ -1,0 +1,210 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Keepwise Voice Assistant</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, system-ui, -apple-system; margin: 20px; color: #fff; background: linear-gradient(#294B7A,#1F3A63); }
+    .card { background: rgba(255,255,255,0.06); padding: 18px; border-radius: 10px; max-width: 900px; margin: 0 auto; box-shadow: 0 6px 18px rgba(0,0,0,0.25); }
+    h1 { margin: 0 0 12px 0; font-size: 20px; color: #fff; }
+    .controls { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+    button { background:#ff9a00; color:#000; border:none; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    button:disabled { opacity:0.5; cursor:not-allowed; }
+    .status { margin-top:8px; font-weight:600; color:#fff; }
+    #voice-result { margin-top:12px; white-space:pre-wrap; background: rgba(255,255,255,0.06); padding:12px; border-radius:8px; color:#fff; min-height:80px; }
+    audio { margin-top:12px; width:100%; display:block; }
+    .small { font-size:0.9rem; color:#eee; }
+    .error { color:#ffdddd; background: rgba(255,0,0,0.07); padding:8px; border-radius:6px; margin-top:8px; }
+    a.back { color:#fff; text-decoration:underline; display:inline-block; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🎙 Keepwise Voice</h1>
+
+    <div class="controls">
+      <button id="start">🎤 Start</button>
+      <button id="stop" disabled>■ Stop</button>
+      <div style="margin-left:auto" class="small">Click Start, speak Age/Department/Income/Overtime, then Stop.</div>
+    </div>
+
+    <div id="status" class="status">Ready — click Start to record.</div>
+
+    <div id="voice-result" aria-live="polite">Transcript, parsed fields and prediction will appear here.</div>
+
+    <audio id="player" controls></audio>
+    <div id="debug" class="small" style="margin-top:8px;color:#ddd"></div>
+
+    <a class="back" href="/">← Return to main form</a>
+  </div>
+
+<script>
+(async function(){
+  const startBtn = document.getElementById('start');
+  const stopBtn  = document.getElementById('stop');
+  const statusEl = document.getElementById('status');
+  const resultBox = document.getElementById('voice-result');
+  const player = document.getElementById('player');
+  const debug = document.getElementById('debug');
+
+  let mediaRecorder = null;
+  let chunks = [];
+
+  function setStatus(s){ statusEl.textContent = s; console.debug("DEBUG:", s); }
+  function setResult(s){ resultBox.textContent = s; }
+  function setDebug(s){ debug.textContent = s; console.debug("DEBUG:", s); }
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    setStatus('Requesting microphone permission...');
+    setResult('');
+    setDebug('');
+    chunks = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      mediaRecorder.start();
+      setStatus('Recording... speak now.');
+      console.debug("DEBUG: recorder started");
+    } catch (err) {
+      console.error(err);
+      setStatus('Microphone permission denied or not available.');
+      setResult('');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    console.debug("DEBUG: stop clicked");
+    if (!mediaRecorder) { setStatus('No recording in progress'); return; }
+    stopBtn.disabled = true;
+    setStatus('Processing audio — uploading to server...');
+    try {
+      mediaRecorder.stop();
+      await new Promise(r=>setTimeout(r,250));
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      console.debug("DEBUG: audio blob size", blob.size);
+
+      // 1) transcribe
+      const fd = new FormData();
+      fd.append('audio', blob, 'voice.webm');
+
+      // robust transcription fetch: parse text and then JSON
+      const tResp = await fetch('/transcribe', { method: 'POST', body: fd });
+      const tText = await tResp.text(); // always get text to inspect raw reply
+      let tJson;
+      try {
+        tJson = tText ? JSON.parse(tText) : {};
+      } catch (e) {
+        // server returned non-JSON: show it to user and abort
+        setStatus('Transcription failed: server returned non-JSON');
+        setResult('Raw /transcribe response:\n' + tText);
+        startBtn.disabled = false;
+        console.error("DEBUG: /transcribe returned non-JSON:", tText);
+        return;
+      }
+      if (!tResp.ok) {
+        setStatus('Transcription error: ' + (tJson.error || tResp.status));
+        setResult('Server response:\n' + JSON.stringify(tJson, null, 2));
+        startBtn.disabled = false;
+        return;
+      }
+
+      const transcript = (tJson.transcript || '').trim();
+      setStatus('Transcribed: ' + (transcript.length>120?transcript.slice(0,120)+'...':transcript));
+      setResult('Transcript:\n' + transcript + '\n\nParsing for prediction...');
+
+      // debug log
+      console.debug("DEBUG: transcript:", transcript);
+
+      // 2) call /voice_predict_simple (robust fetch + parse)
+      const predResp = await fetch('/voice_predict_simple', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript })
+      });
+
+      const predText = await predResp.text();
+      let predJson;
+      try {
+        predJson = predText ? JSON.parse(predText) : {};
+      } catch (e) {
+        // server returned non-JSON — show raw body
+        setStatus('Prediction failed: server returned non-JSON');
+        setResult('Raw /voice_predict_simple response:\n' + predText + '\n\nTranscript:\n' + transcript);
+        console.error("DEBUG: /voice_predict_simple returned non-JSON:", predText);
+        startBtn.disabled = false;
+        return;
+      }
+
+      if (!predResp.ok) {
+        setStatus('Prediction error: ' + (predJson.error || predResp.status));
+        setResult('Server response:\n' + JSON.stringify(predJson, null, 2) + '\n\nTranscript:\n' + transcript);
+        startBtn.disabled = false;
+        return;
+      }
+
+      // 3) show prediction & parsed fields
+      console.debug("DEBUG: predJson:", predJson);
+      const prob = predJson.probability !== undefined ? Number(predJson.probability).toFixed(3) : 'N/A';
+      const text = predJson.text || (predJson.prediction === 1 ? '⚠️ Employee likely to leave' : '✅ Employee likely to stay');
+      const fields = predJson.readable_fields ? JSON.stringify(predJson.readable_fields, null, 2) : (predJson.fields_used ? JSON.stringify(predJson.fields_used,null,2) : '');
+      setStatus(text + ' (prob=' + prob + ')');
+      setResult('Transcript:\n' + transcript + '\n\nParsed fields:\n' + fields + '\n\nPrediction:\n' + text + ' (prob=' + prob + ')');
+
+      // 4) store parsed readable fields to localStorage so main page can autofill and redirect there
+      if (predJson.readable_fields) {
+        try {
+          localStorage.setItem('keepwise_voice_autofill', JSON.stringify(predJson.readable_fields));
+          setDebug('Saved parsed fields to localStorage (keepwise_voice_autofill). Redirecting to main form...');
+          setTimeout(()=>{ window.location.href = '/'; }, 900);
+        } catch (e) {
+          console.warn('LocalStorage save failed', e);
+        }
+      }
+
+      // 5) optional: get assistant audio reply (non-blocking)
+      (async ()=> {
+        try {
+          const chatRes = await fetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript })
+          });
+          const chatText = await chatRes.text();
+          let chatJson = {};
+          try { chatJson = chatText ? JSON.parse(chatText) : {}; } catch(e){ chatJson = null; }
+          if (chatRes.ok && chatJson && chatJson.audio_base64) {
+            const audioBlob = await (await fetch('data:audio/mpeg;base64,' + chatJson.audio_base64)).blob();
+            player.src = URL.createObjectURL(audioBlob);
+            try { await player.play(); } catch(e){ console.warn('Playback failed', e); }
+          } else {
+            console.debug('Chat endpoint returned no audio (or non-JSON).', chatText);
+          }
+        } catch (err) {
+          console.warn('Chat/TTS call failed', err);
+        }
+      })();
+
+    } catch (err) {
+      console.error(err);
+      setStatus('Network or server error during processing.');
+      setResult('Error: ' + (err && err.message ? err.message : String(err)));
+      startBtn.disabled = false;
+    } finally {
+      // cleanup
+      try { if (mediaRecorder && mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach(t=>t.stop()); } catch(e){}
+      mediaRecorder = null;
+      chunks = [];
+      stopBtn.disabled = true;
+      startBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
